@@ -192,18 +192,44 @@ func domainGetIfacesInfo(domain libvirt.Domain, rd *schema.ResourceData) ([]libv
 	return interfaces, nil
 }
 
-func newDiskForCloudInit(virConn *libvirt.Connect, volumeKey string) (libvirtxml.DomainDisk, error) {
+func newDiskForCloudInit(virConn *libvirt.Connect, volumeKey string, domainID string) (libvirtxml.DomainDisk, error) {
+	cdromTarget := "hdd"
+	diskAddress := &libvirtxml.DomainAddress{}
+	if domainID != "" {
+		dom, err := virConn.LookupDomainByUUIDString(domainID)
+		if err != nil {
+			return libvirtxml.DomainDisk{}, fmt.Errorf("Error retrieving libvirt domain: %s", err)
+		}
+		xmlDesc, err := dom.GetXMLDesc(0)
+		if err != nil {
+			return libvirtxml.DomainDisk{}, fmt.Errorf("Error retrieving libvirt domain XML description: %s", err)
+		}
+		domcfg := &libvirtxml.Domain{}
+		domcfg.Unmarshal(xmlDesc)
+		disks := domcfg.Devices.Disks
+		for _, s := range disks {
+			if s.Device == "cdrom" {
+				if s.Source.File.File == volumeKey {
+					cdromTarget = s.Target.Dev
+					diskAddress = s.Address
+					break
+				}
+			}
+		}
+	}
+
 	disk := libvirtxml.DomainDisk{
 		Device: "cdrom",
 		Target: &libvirtxml.DomainDiskTarget{
 			// Last device letter possible with a single IDE controller on i440FX
-			Dev: "hdd",
+			Dev: cdromTarget,
 			Bus: "ide",
 		},
 		Driver: &libvirtxml.DomainDiskDriver{
 			Name: "qemu",
 			Type: "raw",
 		},
+		Address: diskAddress,
 	}
 
 	diskVolume, err := virConn.LookupStorageVolByKey(volumeKey)
@@ -663,7 +689,7 @@ func setCloudinit(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn 
 		if err != nil {
 			return err
 		}
-		disk, err := newDiskForCloudInit(virConn, cloudinitID)
+		disk, err := newDiskForCloudInit(virConn, cloudinitID, "")
 		if err != nil {
 			return err
 		}

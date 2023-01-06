@@ -652,7 +652,7 @@ func resourceLibvirtDomainUpdate(d *schema.ResourceData, meta interface{}) error
 			return err
 		}
 
-		disk, err := newDiskForCloudInit(virConn, cloudinitID)
+		disk, err := newDiskForCloudInit(virConn, cloudinitID, d.Id())
 		if err != nil {
 			return err
 		}
